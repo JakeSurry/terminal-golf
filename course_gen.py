@@ -5,11 +5,12 @@ import time
 from PIL import Image
 
 class GolfCourse:
-    def __init__(self, length=400, width=50, bends=0):
+    def __init__(self, length=400, width=50, bends=0, bottlenecks=0):
         self.length = length # Length of course
         self.width = width # Width of fairway
-        self.bends = bends + 2 # How curvy the fairway will be
-        
+        self.bends = bends # How many curves the fairway has
+        self.bottlenecks = bottlenecks # How many bottlenecks the fairway has
+
         # Grid dimensions
         self.grid_x = length
         self.grid_z = width * 3  # extra space for rough
@@ -23,8 +24,8 @@ class GolfCourse:
     
     def _generate_centerline(self):
         """Create curved fairway path"""    
-        x_points = np.linspace(0, self.length, self.bends) # x position where bends occur
-        z_points = np.random.randn(self.bends) * 20 + (self.grid_z // 2) # z position at the apex of bend
+        x_points = np.linspace(0, self.length, self.bends + 2) # x positions where bends occur
+        z_points = np.random.randn(self.bends + 2) * 20 + (self.grid_z // 2) # z positions at the apex of bends
 
         # Start and end centerline in the middle of the course
         z_points[0] = self.grid_z // 2  
@@ -43,9 +44,24 @@ class GolfCourse:
     def _define_fairway(self):
         """Define fairway width along the centerline"""
         # Vary width - narrower at doglegs, wider on straights
-        num_points = len(self.centerline)
-        
-        self.fairway_width = np.ones(num_points) * self.width
+        # num_points = len(self.centerline)
+
+        # self.fairway_width = np.ones(num_points) * self.width
+
+        x_points = np.linspace(0, self.length, self.bottlenecks + 3)
+        widths = np.abs(self.width - np.random.randn(self.bottlenecks + 3) * (self.width // 4)) # width of the bottleneck
+
+        #start and end fairway with width of 0, middle max width
+        widths[0] = 0 
+        widths[-1] = 0
+        widths[len(widths) // 2] = course.width
+
+        spline = CubicSpline(x_points, widths)
+
+        x_samples = np.arange(0, self.length)
+        widths = spline(x_samples)
+
+        self.fairway_width = np.column_stack([x_samples, widths])
         
     def _generate_terrain(self, seed):
         """Generate height values using Perlin noise"""
@@ -106,14 +122,14 @@ class GolfCourse:
             return False
 
         center_z = self.centerline[x, 1]
-        width = self.fairway_width[x]
+        width = self.fairway_width[x, 1]
         
         # Check lateral distance from centerline
         distance = abs(z - center_z)
         return distance < width / 2
 
 # Usage example
-course = GolfCourse(bends=2) 
+course = GolfCourse(bends=2, bottlenecks=0) 
 course.generate(seed=67)  # Use seed for reproducible courses
 
 # Physics calculations
