@@ -52,8 +52,8 @@ class GolfCourse:
         widths = np.abs(self.width - np.random.randn(self.bottlenecks + 3) * (self.width // 4)) # width of the bottleneck
 
         #start and end fairway with width of 0, middle max width
-        widths[0] = 0 
-        widths[-1] = 0
+        widths[0] = 20
+        widths[-1] = 20
         widths[len(widths) // 2] = course.width
 
         spline = CubicSpline(x_points, widths)
@@ -142,30 +142,35 @@ print(f"Height: {height:.2f}y")
 print(f"Slope: ({slope_x:.3f}, {slope_z:.3f})")
 print(f"On fairway: {on_fairway}")
 
-# height_image = []
-# for row in course.heights:
-#     row_list = []
-#     for cell in row:
-#         if cell >=0:
-#             row_list.append((0, cell*50, 0))
-#         else:
-#             row_list.append((abs(cell)*50, 0, 0))
-#     height_image.append(row_list)
+def height_map_visualizer(course):
+    """Height Map Visualization"""
+    height_image = []
+    for row in course.heights:
+        row_list = []
+        for cell in row:
+            if cell >=0:
+                row_list.append((0, cell*50, 0))
+            else:
+                row_list.append((abs(cell)*50, 0, 0))
+        height_image.append(row_list)
 
-# arr_np = np.array(height_image, dtype=np.uint8)
+    arr_np = np.array(height_image, dtype=np.uint8)
+    Image.fromarray(arr_np, mode='RGB').show()
 
-# Image.fromarray(arr_np, mode='RGB').show()
+def fairway_visualizer(course):
+    """Fairway Visualization"""
+    fairway_bounds = []
+    for z in range(course.grid_z-1):
+        row = []
+        for x in range(course.grid_x-1):
+            if course.is_on_fairway(x, z):
+                row.append((0, 200, 50))
+            else:
+                row.append((0, 0, 0))
+        fairway_bounds.append(row)
+        
+    arr_np = np.array(fairway_bounds, dtype=np.uint8)
+    Image.fromarray(arr_np, mode='RGB').show()
 
-fairway_bounds = []
-for z in range(course.grid_z-1):
-    row = []
-    for x in range(course.grid_x-1):
-        if course.is_on_fairway(x, z):
-            row.append((0, 200, 50))
-        else:
-            row.append((0, 0, 0))
-    fairway_bounds.append(row)
-    
-arr_np = np.array(fairway_bounds, dtype=np.uint8)
-
-Image.fromarray(arr_np, mode='RGB').show()
+# height_map_visualizer(course)
+fairway_visualizer(course)
