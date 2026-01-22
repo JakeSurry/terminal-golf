@@ -1,10 +1,9 @@
 import numpy as np
 np.random.seed(4)
 
-from scipy.interpolate import BSpline, PchipInterpolator
+from scipy.interpolate import BSpline, PchipInterpolator, splprep, splev
 import matplotlib.pyplot as plt
-from PIL import Image
-import time
+from matplotlib.path import Path
 
 class Course():
     def __init__(self, par=4, dogleg=False, intensity=1):
@@ -20,6 +19,10 @@ class Course():
             case 5:
                 self.length = 550
         self.width = 50
+        
+        self.center_line = None
+        self.fairway = None
+        self.fairway_path = None
 
     def _generate_center_line(self):
         inflection_points = 7
@@ -53,31 +56,53 @@ class Course():
         control_array[0] = 0
         control_array[-1] = 0
 
-        print(knot_array)
-        print(control_array)
         width_function = BSpline(knot_array, control_array, degree)
 
         return width_function
     
+    def _generate_fairway_shape(self, center_line, top_width, bottom_width):
+        curve_sample_resolution = 50
+
+        xx = np.linspace(0, self.length, curve_sample_resolution)
+
+        top_bound = center_line(xx) + top_width(xx)
+        bottom_bound = center_line(xx) - bottom_width(xx)
+
+        fairway_x = np.concatenate((xx, xx[-2:0:-1]))
+        fairway_y = np.concatenate((top_bound, bottom_bound[-2:0:-1]))
+
+        shape_generation_resolution = np.linspace(0, 1, 400)
+        tck, u = splprep([fairway_x, fairway_y], s=0, per=True)
+        fairway = splev(shape_generation_resolution, tck)
+        fairway_path = Path(np.column_stack([fairway[0], fairway[1]]))
+
+        return fairway, fairway_path
+    
     def generate(self):
-        self._generate_center_line()
+        center_line = self._generate_center_line()
+        top_width = self._generate_width()
+        bottom_width = self._generate_width()
+        fairway, fairway_path = self._generate_fairway_shape(center_line, top_width, bottom_width)
+
+        self.center_line = center_line
+        self.fairway = fairway
+        self.fairway_path = fairway_path
 
     def on_fairway(self):
-
         return bool
 
 course = Course(dogleg=True)
+course.generate()
 
-centerline = course._generate_center_line()
-top_bound = course._generate_width()
-bottom_bound = course._generate_width()
-
-fig, ax = plt.subplots()
+center_line = course.center_line
+fairway = course.fairway
 xx = np.linspace(0, course.length, 50)
 
-ax.plot(xx, centerline(xx), 'b-', lw=4, alpha=0.7, label='centerline')
-ax.plot(xx, centerline(xx)+top_bound(xx), 'g-', lw=4, alpha=0.7, label='Fairway Boundry')
-ax.plot(xx, centerline(xx)-bottom_bound(xx), 'g-', lw=4, alpha=0.7)
+fig, ax = plt.subplots()
+
+ax.plot(xx, center_line(xx), 'r-', label='Center Line')
+ax.plot(fairway[0], fairway[1], 'b-', linewidth=2, label='Fairway')
+ax.fill(fairway[0], fairway[1], alpha=0.3, color='green')
 
 ax.grid(True)
 ax.legend(loc='best')
