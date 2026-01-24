@@ -68,8 +68,7 @@ class Course():
         return width_function
     
     def _generate_fairway_shape(self, length, center_line, top_width, bottom_width):
-        curve_sample_resolution = 50
-        xx = np.linspace(0, length, curve_sample_resolution)
+        xx = np.linspace(0, length)
 
         top_bound = center_line(xx) + top_width(xx)
         bottom_bound = center_line(xx) - bottom_width(xx)
@@ -77,7 +76,7 @@ class Course():
         fairway_x = np.concatenate((xx, xx[-2:0:-1]))
         fairway_y = np.concatenate((top_bound, bottom_bound[-2:0:-1]))
 
-        shape_generation_resolution = np.linspace(0, 1, 400)
+        shape_generation_resolution = np.linspace(0, 1, length)
         tck, u = splprep([fairway_x, fairway_y], s=0, per=True)
         fairway = splev(shape_generation_resolution, tck)
         fairway_path = Path(np.column_stack([fairway[0], fairway[1]]))
@@ -85,27 +84,26 @@ class Course():
         return fairway, fairway_path
     
     def _generate_green_shape(self, length, fairway):
-        green_start_x = length - 30
+        green_length = 30
+        green_inset = 2 # Distance of green from the edge of the fairway
 
-        fairway_x_coords = fairway[0]
-        fairway_y_coords = fairway[1]
-        
-        top_mask = (fairway_x_coords[:200] >= green_start_x)
-        bottom_mask = (fairway_x_coords[200:] >= green_start_x)
+        green_start_x = length - green_length
+        mask = (fairway[0] >= green_start_x)
 
-        # MIRROR LATTER HALF OF GREEN FOR FIRST HALF SO ITS ROUND
-        
-        green_top_x = fairway_x_coords[:200][top_mask]
-        green_top_y = fairway_y_coords[:200][top_mask]
-        
-        green_bottom_x = fairway_x_coords[200:][bottom_mask][::-1]
-        green_bottom_y = fairway_y_coords[200:][bottom_mask][::-1]
-        
-        green = [np.concatenate([green_top_x, green_bottom_x[-2:0:-1]]),
-                 np.concatenate([green_top_y, green_bottom_y[-2:0:-1]])]
-        
+        xx = fairway[0][mask]
+        yy = fairway[1][mask]
+        xx_prev = xx[:-1]
+        yy_prev = yy[:-1]
+        normals_run = yy[1:] - yy_prev
+        normals_rise = xx_prev - xx[1:]
+        normals_magnitude = np.sqrt(normals_run**2 + normals_rise**2)
+        unclosed_green = np.array([xx[1:] + green_inset*(normals_run/normals_magnitude), 
+                                   yy[1:] + green_inset*(normals_rise/normals_magnitude)])
+
+        tck, u = splprep([unclosed_green[0], unclosed_green[1]], s=0, per=True)
+        green = splev(np.linspace(0, 1, green_length), tck)
         green_path = Path(np.column_stack((green[0], green[1])))
-
+        
         return green, green_path
     
     def generate(self):
