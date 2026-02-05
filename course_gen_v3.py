@@ -31,48 +31,56 @@ class CourseGenerator():
 
     def _generate_green_traps(self, green):
         avg_width = 5
+        trap_outset = 1
 
-        sector = np.rand.randint(0, 2) * 10
+        sector = np.random.randint(0, 2) * 10 # 10 is one third of the placeholder value 30 in _generate_green()
         sector_xx = green[0][sector:sector+10]
         sector_yy = green[1][sector:sector+10]
-
-        '''
-        TODO:   At each sector value, generate two points
-                The first should be one yard from sector point along the normal axis
-                The second should be avg_width yard from first point along the same axis
-                Turn set of points into shape, hopefully a sand trap appears.
-                Maybe shrink distance between points at the edges, but only if necessary. splev seems to just work most of the time.
-                The following code is stolen from course_gen_v2.py green generation, fix it for specific use-case.
-
-                Good luck, don't quit!
 
         prev_xx = sector_xx[:-1]
         prev_yy = sector_yy[:-1]
         normals_run = sector_yy[1:] - prev_yy
         normals_rise = prev_xx - sector_xx[1:]
-        normals_magnitude = np.sqrt(normals_run**2 + normals_rise**2)
-        unclosed_green = np.array([xx[1:] + green_inset*(normals_run/normals_magnitude), 
-                                   yy[1:] + green_inset*(normals_rise/normals_magnitude)])
+        normals_direction = np.sqrt(normals_run**2 + normals_rise**2)
 
-        tck, u = splprep([unclosed_green[0], unclosed_green[1]], s=0, per=True)
-        green = splev(np.linspace(0, 1, green_length), tck)
-        green_path = Path(np.column_stack((green[0], green[1])))
-        '''
+        trap_top = [[], []]
+        trap_bottom = [[], []]
+        for point_index in range(1, len(sector_xx)):
+            width = avg_width + 2*np.random.randn()
+            x_scaler = (normals_run[point_index-1]/normals_direction[point_index-1])
+            y_scaler = (normals_rise[point_index-1]/normals_direction[point_index-1])
+            trap_bottom[0].append(sector_xx[point_index] + trap_outset*x_scaler)
+            trap_bottom[1].append(sector_yy[point_index] + trap_outset*y_scaler)
+            trap_top[0].append(trap_bottom[0][-1] + width*x_scaler)
+            trap_top[1].append(trap_bottom[1][-1] + width*y_scaler)
+        
+        unclosed_trap = np.array([
+            np.concatenate((trap_bottom[0], trap_top[0][::-1])),
+            np.concatenate((trap_bottom[1], trap_top[1][::-1]))
+            ])
+        
+        tck, _ = splprep(unclosed_trap, s=0, per=True)
+        trap = splev(np.linspace(0, 1, 50), tck) # 50 is another placeholder value
+        green_path = Path(np.column_stack((trap[0], trap[1])))
+
+        return trap
 
 
     def generate(self, length=350):
         green = self._generate_green() 
-        return green
+        trap = self._generate_green_traps(green)
+        return green, trap
 
 
 def main():
     xx = np.linspace(0, 350, 50) 
     course = CourseGenerator()
-    green = course.generate()
+    green, trap = course.generate()
 
     fig, ax = plt.subplots()
     # ax.plot(xx, center_line(xx), 'r-', label='')
     ax.fill(green[0], green[1], alpha=.5, color='seagreen')
+    ax.fill(trap[0], trap[1], alpha=.5, color='red')
 
     ax.grid(True)
     ax.legend(loc='best')
