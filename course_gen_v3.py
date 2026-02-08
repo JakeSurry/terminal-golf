@@ -26,9 +26,8 @@ class Feature:
 
 
 class CourseGenerator():
-    def __init__(self, length=350):
+    def __init__(self, length: int = 350):
         self.length = length
-
         self.center_line = None
         self.features = []
 
@@ -51,24 +50,32 @@ class CourseGenerator():
         return PchipInterpolator(x_points, y_points)
 
 
-    def _generate_green(self):
+    def _generate_blob(self, avg_width: int, avg_height: int, variance: int = 1):
         resolution = 100
+
+        thetas = np.linspace(0, 2 * np.pi, 12)
+        radii = variance * np.random.randn(len(thetas))
+        xx = np.cos(thetas) * (radii + avg_width)
+        yy = np.sin(thetas) * (radii + avg_height)
+
+        tck, _ = splprep([xx, yy], s=0, per=True)
+        smooth_xx, smooth_yy = splev(np.linspace(0, 1, resolution), tck)
+
+        return smooth_xx, smooth_yy
+
+
+    def _generate_green(self):
         avg_radius = 15
         variance = 1
 
-        xx = []
-        yy = []
-        thetas = np.linspace(0, 2 * np.pi, 12)
-        for theta in thetas:
-            hypotnuse = avg_radius + (variance * np.random.randn())
-            xx.append(hypotnuse * np.cos(theta))
-            yy.append(hypotnuse * np.sin(theta))
-
-        tck, _ = splprep([xx, yy], s=0, per=True)
-        green_shape = tuple(splev(np.linspace(0, 1, resolution), tck))
+        green_xx, green_yy = self._generate_blob(avg_width=avg_radius, avg_height=avg_radius, variance=variance)
         green_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="green", xx=green_shape[0], yy=green_shape[1], pos=green_pos,  color='seagreen')
+        return Feature(ftype="green",
+                       xx=green_xx, 
+                       yy=green_yy,
+                       pos=green_pos,
+                       color='seagreen')
 
 
     def _generate_green_traps(self):
@@ -106,13 +113,46 @@ class CourseGenerator():
         trap_xx, trap_yy = splev(np.linspace(0, 1, resolution), tck)
         trap_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="trap", xx=trap_xx, yy=trap_yy, pos=trap_pos,  color='wheat')
+        return Feature(ftype="trap",
+                       xx=trap_xx,
+                       yy=trap_yy,
+                       pos=trap_pos,
+                       color='wheat')
 
 
+    def _generate_traps(self):
+        avg_width = 10
+        avg_height = 5
+        variance = 1
+
+        n_traps = np.random.randint(1, 3)
+        widths = np.full(n_traps, avg_width) + variance * np.random.randn(n_traps)
+        heights = np.full(n_traps, avg_height) + variance * np.random.randn(n_traps)
+
+        trap_shapes = [self._generate_blob(avg_width=widths[i], avg_height=heights[i]) for i in range(n_traps)]
+
+        traps = []
+        trap_distances = np.linspace(180, 260, n_traps) # 180, 260 placeholders for now
+        for trap_index, trap_x in enumerate(trap_distances):
+            lateral = np.random.choice([-1, 1]) * np.random.uniform(12, 25) # 12, 25 placeholders for now
+            trap_y = self.center_line(trap_x) + lateral
+            traps.append(Feature(ftype="trap", 
+                                 xx=trap_shapes[trap_index][0], 
+                                 yy=trap_shapes[trap_index][1], 
+                                 pos=(trap_x, trap_y),
+                                 color="wheat"))
+        
+        return traps
+            
+    
+    def _generate_river(self):
+        pass
+    
     def generate(self):
         self.center_line = self._generate_center_line()
         self.features.append(self._generate_green())
         self.features.append(self._generate_green_traps())
+        self.features.extend(self._generate_traps())
         
 
 def main():
