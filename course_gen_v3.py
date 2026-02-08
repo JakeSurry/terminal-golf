@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.interpolate import BSpline, PchipInterpolator, splprep, splev
+from scipy.interpolate import interp1d, PchipInterpolator, splprep, splev
 import matplotlib.pyplot as plt
+from math import copysign
 from matplotlib.path import Path
 from dataclasses import dataclass
 from functools import cached_property
@@ -71,11 +72,13 @@ class CourseGenerator():
         green_xx, green_yy = self._generate_blob(avg_width=avg_radius, avg_height=avg_radius, variance=variance)
         green_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="green",
-                       xx=green_xx, 
-                       yy=green_yy,
-                       pos=green_pos,
-                       color='seagreen')
+        return Feature(
+            ftype="green",
+            xx=green_xx, 
+            yy=green_yy,
+            pos=green_pos,
+            color='red'
+        )
 
 
     def _generate_green_traps(self):
@@ -113,11 +116,13 @@ class CourseGenerator():
         trap_xx, trap_yy = splev(np.linspace(0, 1, resolution), tck)
         trap_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="trap",
-                       xx=trap_xx,
-                       yy=trap_yy,
-                       pos=trap_pos,
-                       color='wheat')
+        return Feature(
+            ftype="trap",
+            xx=trap_xx,
+            yy=trap_yy,
+            pos=trap_pos,
+            color='wheat'
+        )
 
 
     def _generate_traps(self):
@@ -145,14 +150,52 @@ class CourseGenerator():
         return traps
             
     
-    def _generate_river(self):
-        pass
+    def _generate_fairway(self):
+        base_width = 30
+        resolution = 100
     
+        xx = np.linspace(0, self.length+10, resolution)
+        centerline_y = np.array([self.center_line(x) for x in xx])
+        yy_top = centerline_y + base_width / 2
+        yy_bot = centerline_y - base_width / 2
+        
+        for feature in self.features:
+            if feature.ftype == "green":
+                distances = np.abs(xx - feature.pos[0])
+                bump = np.exp(-distances**2 / (2*30**2))
+                yy_top += bump * (max(feature.abs_yy) - base_width//3)
+                yy_bot += bump * (min(feature.abs_yy) + base_width//3)
+            
+            elif feature.ftype == "trap":
+                distances = np.abs(xx - feature.pos[0])
+                bump = np.exp(-distances**2 / (2*15**2))
+                if feature.pos[1] > self.center_line(feature.pos[0]):
+                    yy_top += bump * (max(feature.abs_yy) - base_width//3)
+                else:
+                    yy_bot += bump * (min(feature.abs_yy) + base_width//3)
+        
+        fairway_xx = np.concatenate([xx, xx[::-1]])
+        fairway_yy = np.concatenate([yy_top, yy_bot[::-1]])
+
+        tck, _ = splprep([fairway_xx, fairway_yy], s=0, per=True)
+        fairway_xx_smooth, fairway_yy_smooth = splev(np.linspace(0, 1, resolution), tck)
+        fairway_pos = (0, 0)
+
+        return Feature(
+            ftype="trap",
+            xx=fairway_xx_smooth,
+            yy=fairway_yy_smooth,
+            pos=fairway_pos,
+            color="green"
+        )
+
+
     def generate(self):
         self.center_line = self._generate_center_line()
         self.features.append(self._generate_green())
-        self.features.append(self._generate_green_traps())
+        # self.features.append(self._generate_green_traps())
         self.features.extend(self._generate_traps())
+        self.features.append(self._generate_fairway())
         
 
 def main():
@@ -162,7 +205,7 @@ def main():
 
     fig, ax = plt.subplots()
     # ax.plot(xx, center_line(xx), 'r-', label='')
-    for feature in course.features:
+    for feature in course.features[::-1]:
         ax.fill(feature.abs_xx, feature.abs_yy, alpha=1, color=feature.color, label=feature.ftype)
 
     ax.grid(True)
