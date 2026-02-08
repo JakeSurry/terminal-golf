@@ -3,27 +3,27 @@ from scipy.interpolate import BSpline, PchipInterpolator, splprep, splev
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from dataclasses import dataclass
+from functools import cached_property
 
 np.random.seed(1)
-
-@dataclass
-class Line:
-    xx: tuple
-    yy: tuple
-    position: tuple = (0, 0)
-
 
 @dataclass
 class Feature:
     ftype: str
     xx: tuple
     yy: tuple
-    path: Path
-    height: tuple = ()
-    position: tuple = (0, 0)
-    parent: Line | Feature = None
+    zz: tuple = ()
+    pos: tuple = (0, 0)
     color: str = 'black'
+
+    @cached_property
+    def abs_xx(self):
+        return [x+self.pos[0] for x in self.xx]
     
+    @cached_property
+    def abs_yy(self):
+        return [y+self.pos[1] for y in self.yy]
+
 
 class CourseGenerator():
     def __init__(self, length=350):
@@ -48,18 +48,16 @@ class CourseGenerator():
         #     for i in range(1, inflection_points-1):
         #         y_points[i] = bend_intensity * np.exp(-((i-bend_location)/2)**2)
 
-        center_line_points = PchipInterpolator(x_points, y_points)
-        
-        return Line(xx=center_line_points[0], yy=center_line_points[1])
+        return PchipInterpolator(x_points, y_points)
 
 
     def _generate_green(self):
         resolution = 100
         avg_radius = 15
         variance = 1
+
         xx = []
         yy = []
-
         thetas = np.linspace(0, 2 * np.pi, 12)
         for theta in thetas:
             hypotnuse = avg_radius + (variance * np.random.randn())
@@ -68,9 +66,9 @@ class CourseGenerator():
 
         tck, _ = splprep([xx, yy], s=0, per=True)
         green_shape = tuple(splev(np.linspace(0, 1, resolution), tck))
-        green_path = Path(np.column_stack((green_shape[0], green_shape[1])))
+        green_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="green", shape=green_shape, path=green_path, parent=self.center_line, color='seagreen')
+        return Feature(ftype="green", xx=green_shape[0], yy=green_shape[1], pos=green_pos,  color='seagreen')
 
 
     def _generate_green_traps(self):
@@ -78,43 +76,37 @@ class CourseGenerator():
         avg_width = 8
         variance = 1
         trap_outset = 1
+        n_sample_points = 8
         green = self.features[0]
 
-        sector_arc = len(green.shape[0]) // 3
-        sector_start = np.random.randint(0, 2) * sector_arc
-        sector_end = sector_start + sector_arc
-        sector_xx = green.shape[0][sector_start:sector_end]
-        sector_yy = green.shape[1][sector_start:sector_end]
+        sector_arc = len(green.xx) // 3
+        sector_start = np.random.choice([0, sector_arc, 2 * sector_arc])
+        sector_slice = slice(sector_start, sector_start + sector_arc)
+        sector_xx = green.xx[sector_slice]
+        sector_yy = green.yy[sector_slice]
 
-        prev_xx = sector_xx[:-1]
-        prev_yy = sector_yy[:-1]
-        normals_run = sector_yy[1:] - prev_yy
-        normals_rise = prev_xx - sector_xx[1:]
-        normals_direction = np.sqrt(normals_run**2 + normals_rise**2)
+        dxx = np.diff(sector_xx)
+        dyy = np.diff(sector_yy)
+        normals_length = np.sqrt(dxx**2 + dyy**2)
+        nxx = dyy / normals_length        
+        nyy = -dxx / normals_length
 
-        trap_top_x = []
-        trap_top_y = []
-        trap_bot_x = []
-        trap_bot_y = []
-        for point_index in range(1, sector_arc, sector_arc // 8):
-            width = avg_width + variance*np.random.randn()
-            x_scaler = (normals_run[point_index-1]/normals_direction[point_index-1])
-            y_scaler = (normals_rise[point_index-1]/normals_direction[point_index-1])
-            trap_bot_x.append(sector_xx[point_index] + trap_outset*x_scaler)
-            trap_bot_y.append(sector_yy[point_index] + trap_outset*y_scaler)
-            trap_top_x.append(trap_bot_x[-1] + width*x_scaler)
-            trap_top_y.append(trap_bot_y[-1] + width*y_scaler)
+        point_indicies = np.arange(1, sector_arc, sector_arc // n_sample_points)
+        widths = avg_width + variance * np.random.randn(len(point_indicies))
+
+        bot_xx = sector_xx[point_indicies] + trap_outset * nxx[point_indicies-1] 
+        bot_yy = sector_yy[point_indicies] + trap_outset * nyy[point_indicies-1] 
+        top_xx = bot_xx + widths * nxx[point_indicies-1] 
+        top_yy = bot_yy + widths * nyy[point_indicies-1] 
+
+        rough_trap_xx = np.concatenate((bot_xx, top_xx[::-1]))
+        rough_trap_yy = np.concatenate((bot_yy, top_yy[::-1]))
         
-        unclosed_trap = np.array([
-            np.concatenate((trap_bot_x, trap_top_x[::-1])),
-            np.concatenate((trap_bot_y, trap_top_y[::-1]))
-            ])
-        
-        tck, _ = splprep(unclosed_trap, s=0, per=True)
-        trap_shape = tuple(splev(np.linspace(0, 1, resolution), tck))
-        trap_path = Path(np.column_stack((trap_shape[0], trap_shape[1])))
+        tck, _ = splprep([rough_trap_xx, rough_trap_yy], s=0, per=True)
+        trap_xx, trap_yy = splev(np.linspace(0, 1, resolution), tck)
+        trap_pos = (self.length, self.center_line(self.length))
 
-        return Feature(ftype="trap", shape=trap_shape, path=trap_path, parent=green, color='wheat')
+        return Feature(ftype="trap", xx=trap_xx, yy=trap_yy, pos=trap_pos,  color='wheat')
 
 
     def generate(self):
@@ -131,7 +123,7 @@ def main():
     fig, ax = plt.subplots()
     # ax.plot(xx, center_line(xx), 'r-', label='')
     for feature in course.features:
-        ax.fill(feature.shape[0], feature.shape[1], alpha=1, color=feature.color, label=feature.ftype)
+        ax.fill(feature.abs_xx, feature.abs_yy, alpha=1, color=feature.color, label=feature.ftype)
 
     ax.grid(True)
     ax.legend(loc='best')
